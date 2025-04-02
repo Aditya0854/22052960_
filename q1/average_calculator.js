@@ -1,102 +1,120 @@
 const express = require('express');
 const axios = require('axios');
 const app = express();
+const port = 3000;
 
 // Configuration
-const PORT = 9876;
-const TEST_SERVER = 'http://20.244.56.144/evaluation-service';
 const WINDOW_SIZE = 10;
-const TIMEOUT = 500; // milliseconds
+const TIMEOUT_MS = 500;
+const TEST_SERVER_BASE_URL = 'http://20.244.56.144/evaluation-service';
+
+// Authentication data
+const authData = {
+  token_type: "Bearer", // Update this with your token_type value
+  access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJNYXBDbGFpbXMiOnsiZXhwIjoxNzQzNTk4OTQ5LCJpYXQiOjE3NDM1OTg2NDksImlzcyI6IkFmZm9yZG1lZCIsImp0aSI6IjY3NjQ5Yzk1LTliYjMtNDBhYy05ODlkLThmMjA4YzgxM2JmOSIsInN1YiI6IjIyMDUyOTYwQGtpaXQuYWMuaW4ifSwiZW1haWwiOiIyMjA1Mjk2MEBraWl0LmFjLmluIiwibmFtZSI6ImFkaXR5YSBrdW1yZiIsInJvbGxObyI6IjIyMDUyOTYwIiwiYWNjZXNzQ29kZSI6Im53cHdyWiIsImNsaWVudElEIjoiNjc2NDljOTUtOWJiMy00MGFjLTk4OWQtOGYyMDhjODEzYmY5IiwiY2xpZW50U2VjcmV0IjoiaERiQXlZZ3RYUlVzbnN4dSJ9.dPtEgnUFF4NRbsBhremAJwOvy45hfDz0tLHSIqnU9rI", // Replace with your actual access token
+  expires_in: 1743598949
+  // Token expiry time in seconds
+};
 
 // Data storage
-let windowState = {
-  windowPrevState: [],
-  windowCurrState: [],
-  numbers: []
-};
+let numbersWindow = [];
+let previousWindow = [];
+
+// Middleware for parsing JSON
+app.use(express.json());
 
 // Helper function to calculate average
-const calculateAverage = (numbers) => {
-  if (numbers.length === 0) return 0;
-  const sum = numbers.reduce((acc, num) => acc + num, 0);
-  return (sum / numbers.length).toFixed(2);
-};
+function calculateAverage(numbers) {
+    if (numbers.length === 0) return 0;
+    const sum = numbers.reduce((acc, num) => acc + num, 0);
+    return (sum / numbers.length).toFixed(2);
+}
 
-// Route for handling qualified number IDs
-app.get('/numbers/:id', async (req, res) => {
-  const numberType = req.params.id;
-  
-  // Validate the number type
-  if (!['p', 'f', 'e', 'r'].includes(numberType)) {
-    return res.status(400).json({ error: 'Invalid number type. Use p (prime), f (fibonacci), e (even), or r (random)' });
-  }
-  
-  try {
-    // Determine which API endpoint to call based on the number type
-    let endpoint;
-    switch (numberType) {
-      case 'p':
-        endpoint = `${TEST_SERVER}/primes`;
-        break;
-      case 'f':
-        endpoint = `${TEST_SERVER}/fibo`;
-        break;
-      case 'e':
-        endpoint = `${TEST_SERVER}/even`;
-        break;
-      case 'r':
-        endpoint = `${TEST_SERVER}/rand`;
-        break;
-    }
-    
-    // Fetch numbers from the appropriate endpoint with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
-    
-    const response = await axios.get(endpoint, { signal: controller.signal })
-      .finally(() => clearTimeout(timeoutId));
-    
-    // Update window state
-    windowState.windowPrevState = [...windowState.windowCurrState];
-    
-    // Get unique numbers from the response
-    const newNumbers = response.data.numbers;
-    
-    // Add new numbers to the current window state
-    windowState.windowCurrState.push(...newNumbers);
-    
-    // Ensure window state doesn't exceed the window size
-    if (windowState.windowCurrState.length > WINDOW_SIZE) {
-      // Remove oldest numbers to maintain window size
-      const excessCount = windowState.windowCurrState.length - WINDOW_SIZE;
-      windowState.windowCurrState = windowState.windowCurrState.slice(excessCount);
-    }
-    
-    // Update the combined numbers array with unique values
-    windowState.numbers = [...new Set([...windowState.numbers, ...newNumbers])];
-    
-    // Calculate the average
-    const avg = calculateAverage(windowState.windowCurrState);
-    
-    // Prepare the response
-    const responseData = {
-      windowPrevState: windowState.windowPrevState,
-      windowCurrState: windowState.windowCurrState,
-      numbers: newNumbers,
-      avg: parseFloat(avg)
+// Helper function to fetch numbers from external APIs
+async function fetchNumbers(type) {
+    const endpoints = {
+        'p': '/primes',
+        'f': '/fibo',
+        'e': '/even',
+        'r': '/rand'
     };
-    
-    res.json(responseData);
-  } catch (error) {
-    if (error.name === 'AbortError' || (error.code && error.code === 'ECONNABORTED')) {
-      return res.status(408).json({ error: 'Request timeout - exceeded 500ms' });
+
+    const endpoint = endpoints[type];
+    if (!endpoint) {
+        throw new Error('Invalid number type');
     }
-    console.error('Error fetching data:', error.message);
-    res.status(500).json({ error: 'Failed to fetch numbers' });
-  }
+
+    try {
+        // Add authorization header with the token
+        const response = await axios.get(${TEST_SERVER_BASE_URL}${endpoint}, {
+            timeout: TIMEOUT_MS,
+            headers: {
+                'Authorization': ${authData.token_type} ${authData.access_token}
+            }
+        });
+
+        if (response.data && response.data.numbers) {
+            return response.data.numbers;
+        }
+        return [];
+    } catch (error) {
+        console.error(Error fetching ${type} numbers:, error.message);
+        return [];
+    }
+}
+
+// Root route
+app.get('/', (req, res) => {
+    res.send('Average Calculator Microservice is running. Use /numbers/p, /numbers/f, /numbers/e, or /numbers/r to access the API.');
+});
+
+// Route to handle qualified number IDs
+app.get('/numbers/:numberId', async (req, res) => {
+    const numberId = req.params.numberId;
+
+    // Check if the ID is qualified
+    if (!['p', 'f', 'e', 'r'].includes(numberId)) {
+        return res.status(400).json({ error: 'Invalid number ID. Use p, f, e, or r.' });
+    }
+
+    try {
+        // Fetch numbers from the third-party server
+        const fetchedNumbers = await fetchNumbers(numberId);
+
+        // Update the window with unique numbers
+        previousWindow = [...numbersWindow];
+
+        // Add unique numbers to the window
+        fetchedNumbers.forEach(num => {
+            if (!numbersWindow.includes(num)) {
+                numbersWindow.push(num);
+            }
+        });
+
+        // Trim window if it exceeds the size limit
+        if (numbersWindow.length > WINDOW_SIZE) {
+            numbersWindow = numbersWindow.slice(numbersWindow.length - WINDOW_SIZE);
+        }
+
+        // Calculate the average
+        const avg = calculateAverage(numbersWindow);
+
+        // Prepare response
+        const response = {
+            windowPrevState: previousWindow,
+            windowCurrState: numbersWindow,
+            numbers: fetchedNumbers,
+            avg: parseFloat(avg)
+        };
+
+        res.json(response);
+    } catch (error) {
+        console.error('Error processing request:', error.message);
+        res.status(500).json({ error: 'Server error' });
+    }
 });
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Average Calculator microservice running on http://localhost:${PORT}`);
+app.listen(port, () => {
+    console.log(Average Calculator Microservice running on http://localhost:${port});
 });
